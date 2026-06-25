@@ -42,8 +42,16 @@ python crawl_027zpw_companies.py --config configs/027zpw_jobs.example.yml
 1. 打开 Streamlit Community Cloud。
 2. 选择 GitHub 仓库 `tofuchanchan/zpw_crawler`。
 3. Main file path 填写 `app.py`。
-4. Python 依赖会从 `requirements.txt` 安装。
-5. 部署完成后得到公网访问地址。
+4. Advanced settings 里 Python version 建议选择 `3.11`。
+5. Python 依赖会从 `requirements.txt` 安装。
+6. 部署完成后得到公网访问地址。
+
+如果页面提示 `Error installing requirements`：
+
+1. 点击 Streamlit Cloud 里的 `Manage App`。
+2. 打开日志终端，确认失败发生在依赖安装阶段。
+3. 进入 `Settings` / `Advanced settings`，把 Python version 改成 `3.11`。
+4. 点击 `Reboot app` 或重新部署。
 
 这个方案适合 MVP 和小批量任务。全量抓取并开启详情时，任务会比较久，建议先用 `max_pages=1` 或 `max_pages=3` 验证字段。
 
