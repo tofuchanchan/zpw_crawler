@@ -112,7 +112,7 @@ def main() -> None:
         st.error(f"采集失败：{exc}")
         if "ConnectTimeout" in str(exc) or "timed out" in str(exc):
             st.warning(
-                "当前部署环境无法连接目标站 www.027zpw.com。"
+                "当前部署环境无法连接目标站 `www.027zpw.com`。"
                 "这通常是目标站屏蔽云服务器出口或跨境网络不可达导致的，"
                 "建议改用本地运行、Render/自有服务器，或部署在能访问该站点的网络环境。"
             )
