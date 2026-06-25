@@ -89,6 +89,8 @@ def parse_search_page(
         username = parse_username(homepage_url)
         intro = _text(_first(item, (".Biz-type", ".biz-type")))
         main_products = _text(_first(item, (".sw-mod-allcompany-Service", ".allcompany-Service")))
+        list_address = _extract_labeled_value(item, ("地址",))
+        phone = _extract_labeled_value(item, ("电话", "联系电话", "公司电话", "手机", "移动电话"))
         business_type, verified_status = parse_icon_collection(_text(_first(item, (".iconCollection",))))
 
         if not company_name and not homepage_url:
@@ -107,12 +109,27 @@ def parse_search_page(
                 "main_products": main_products,
                 "business_type": business_type,
                 "verified_status": verified_status,
+                "list_address": list_address,
+                "phone": phone,
                 "detail_title": "",
                 "detail_slogan": "",
                 "meta_keywords": "",
                 "meta_description": "",
                 "company_description": "",
                 "company_image_url": "",
+                "profile_company_name": "",
+                "profile_company_type": "",
+                "profile_location": "",
+                "profile_company_size": "",
+                "profile_registered_capital": "",
+                "profile_registered_year": "",
+                "profile_data_certification": "",
+                "profile_security_deposit": "",
+                "profile_business_model": "",
+                "profile_business_scope": "",
+                "profile_selling_products": "",
+                "profile_main_industries": "",
+                "profile_fields_json": "",
                 "visit_count": "",
                 "homepage_status": "",
                 "homepage_error": "",
@@ -149,6 +166,8 @@ def parse_company_homepage(html: str, *, page_url: str) -> dict[str, str]:
     if visit_match:
         visit_count = visit_match.group(1)
 
+    profile_fields = parse_company_profile(soup)
+
     return {
         "detail_title": title,
         "detail_slogan": slogan,
@@ -156,13 +175,63 @@ def parse_company_homepage(html: str, *, page_url: str) -> dict[str, str]:
         "meta_description": meta_description,
         "company_description": company_description,
         "company_image_url": image_url,
+        "profile_company_name": profile_fields.get("公司名称", ""),
+        "profile_company_type": profile_fields.get("公司类型", ""),
+        "profile_location": profile_fields.get("所在地", ""),
+        "profile_company_size": profile_fields.get("公司规模", ""),
+        "profile_registered_capital": profile_fields.get("注册资本", ""),
+        "profile_registered_year": profile_fields.get("注册年份", ""),
+        "profile_data_certification": profile_fields.get("资料认证", ""),
+        "profile_security_deposit": profile_fields.get("保证金", ""),
+        "profile_business_model": profile_fields.get("经营模式", ""),
+        "profile_business_scope": profile_fields.get("经营范围", ""),
+        "profile_selling_products": profile_fields.get("销售的产品", ""),
+        "profile_main_industries": profile_fields.get("主营行业", ""),
+        "profile_fields_json": _json_dumps(profile_fields),
         "visit_count": visit_count,
         "homepage_status": "success",
         "homepage_error": "",
     }
 
 
+def parse_company_profile(soup: BeautifulSoup) -> dict[str, str]:
+    profile_body = _find_section_body(soup, "公司档案")
+    if not profile_body:
+        return {}
+
+    fields: dict[str, str] = {}
+    for label_cell in profile_body.select("td.f_b"):
+        label = _normalize_label(_text(label_cell))
+        if not label:
+            continue
+        value_cell = _next_td(label_cell)
+        if not value_cell:
+            continue
+        fields[label] = _profile_value(value_cell)
+    return fields
+
+
+def _extract_labeled_value(container: Tag, labels: tuple[str, ...]) -> str:
+    normalized_labels = {_normalize_label(label) for label in labels}
+    for node in container.select(".Address, div, p, span"):
+        label_node = node.find("em", recursive=False)
+        if not label_node:
+            continue
+        label = _normalize_label(_text(label_node))
+        if label not in normalized_labels:
+            continue
+        text = _text(node)
+        label_text = _text(label_node)
+        value = text.replace(label_text, "", 1).strip()
+        return value.strip(":： ")
+    return ""
+
+
 def _find_company_description_node(soup: BeautifulSoup) -> Tag | None:
+    section_body = _find_section_body(soup, "公司介绍")
+    if section_body:
+        return section_body
+
     direct = _first(soup, (".main_body", ".box_body", ".content", "#content"))
     if direct and "公司介绍" in _text(direct):
         return direct
@@ -177,6 +246,56 @@ def _find_company_description_node(soup: BeautifulSoup) -> Tag | None:
         return parent
 
     return direct
+
+
+def _find_section_body(soup: BeautifulSoup, title: str) -> Tag | None:
+    for strong in soup.find_all("strong"):
+        if _text(strong) != title:
+            continue
+        head = strong.find_parent(class_="main_head")
+        if head:
+            sibling = head.find_next_sibling()
+            while isinstance(sibling, Tag):
+                classes = sibling.get("class", [])
+                if "main_body" in classes:
+                    return sibling
+                sibling = sibling.find_next_sibling()
+        for sibling in strong.find_all_next(limit=8):
+            if isinstance(sibling, Tag) and "main_body" in sibling.get("class", []):
+                return sibling
+    return None
+
+
+def _next_td(cell: Tag) -> Tag | None:
+    sibling = cell.find_next_sibling()
+    while sibling and not (isinstance(sibling, Tag) and sibling.name == "td"):
+        sibling = sibling.find_next_sibling()
+    return sibling if isinstance(sibling, Tag) else None
+
+
+def _normalize_label(value: str) -> str:
+    return re.sub(r"\s+", "", value).rstrip(":：")
+
+
+def _profile_value(cell: Tag) -> str:
+    nested_cells = cell.select("table td")
+    if nested_cells:
+        values = [_text(nested) for nested in nested_cells]
+        return " | ".join(value for value in values if value)
+
+    value = _text(cell)
+    image_titles = [_attr(image, "title") for image in cell.select("img") if _attr(image, "title")]
+    if image_titles:
+        value = " ".join(part for part in [value, " ".join(image_titles)] if part)
+    return value
+
+
+def _json_dumps(value: dict[str, str]) -> str:
+    if not value:
+        return ""
+    import json
+
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
 def dedupe_key(row: dict[str, Any]) -> str:

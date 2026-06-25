@@ -14,6 +14,7 @@ from .parser import dedupe_key, parse_company_homepage, parse_search_page, parse
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
+DETAIL_SCHEMA_VERSION = 2
 
 
 @dataclass(slots=True)
@@ -161,6 +162,8 @@ def run_job(
             for row in rows:
                 key = dedupe_key(row)
                 if key in companies_by_key:
+                    if _merge_missing_list_fields(companies_by_key[key], row):
+                        cache.upsert_company(key, companies_by_key[key], detail_done=cache.is_detail_done(key))
                     dedupe_count += 1
                     continue
                 companies_by_key[key] = row
@@ -169,10 +172,11 @@ def run_job(
 
         if job.crawl_detail:
             for index, (key, row) in enumerate(list(companies_by_key.items()), start=1):
-                if job.resume and cache.is_detail_done(key):
+                if job.resume and cache.is_detail_done(key) and row.get("_detail_schema_version") == DETAIL_SCHEMA_VERSION:
                     continue
                 homepage_url = row.get("homepage_url") or _homepage_from_username(row.get("username", ""))
-                if not homepage_url:
+                introduce_url = _with_file(homepage_url, "introduce")
+                if not introduce_url:
                     continue
                 _emit(
                     progress,
@@ -183,17 +187,18 @@ def run_job(
                     company_name=row.get("company_name", ""),
                 )
                 try:
-                    response = fetcher.fetch(homepage_url, job.delay)
+                    response = fetcher.fetch(introduce_url, job.delay)
                     request_count += 1
                     detail = parse_company_homepage(response.text, page_url=response.url)
                     row.update(detail)
+                    row["_detail_schema_version"] = DETAIL_SCHEMA_VERSION
                     cache.upsert_company(key, row, detail_done=detail.get("homepage_status") == "success")
                 except FetchError as exc:
                     row.update({"homepage_status": "failed", "homepage_error": exc.message})
                     failed_urls.append(
                         _failed_row(
                             job,
-                            homepage_url,
+                            introduce_url,
                             "company_homepage",
                             int(row.get("page") or 0),
                             row.get("company_name", ""),
@@ -250,6 +255,26 @@ def _homepage_from_username(username: str) -> str:
     if not username:
         return ""
     return f"http://www.027zpw.com/index.php?homepage={username}"
+
+
+def _with_file(homepage_url: str, file_name: str) -> str:
+    if not homepage_url:
+        return ""
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(homepage_url)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params["file"] = file_name
+    return urlunparse(parsed._replace(query=urlencode(params)))
+
+
+def _merge_missing_list_fields(existing: dict[str, Any], parsed: dict[str, Any]) -> bool:
+    changed = False
+    for field in ("list_address", "phone"):
+        if not existing.get(field) and parsed.get(field):
+            existing[field] = parsed[field]
+            changed = True
+    return changed
 
 
 def _failed_row(
