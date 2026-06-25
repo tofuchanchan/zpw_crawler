@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from src.zpw_crawler.config import job_from_url, jobs_from_yaml_text
+from src.zpw_crawler.fetcher import HttpFetcher
 from src.zpw_crawler.runner import run_jobs
 
 
@@ -99,9 +100,22 @@ def main() -> None:
 
     try:
         with st.spinner("正在采集，请保持页面打开..."):
-            results = run_jobs(jobs, output_dir="outputs", cache_dir="work/cache", progress=progress)
+            fetcher = HttpFetcher(timeout=8, max_retries=1)
+            results = run_jobs(
+                jobs,
+                output_dir="outputs",
+                cache_dir="work/cache",
+                fetcher=fetcher,
+                progress=progress,
+            )
     except Exception as exc:
         st.error(f"采集失败：{exc}")
+        if "ConnectTimeout" in str(exc) or "timed out" in str(exc):
+            st.warning(
+                "当前部署环境无法连接目标站 www.027zpw.com。"
+                "这通常是目标站屏蔽云服务器出口或跨境网络不可达导致的，"
+                "建议改用本地运行、Render/自有服务器，或部署在能访问该站点的网络环境。"
+            )
         return
 
     for result in results:
