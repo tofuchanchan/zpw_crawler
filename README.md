@@ -25,6 +25,25 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+首次运行前需要配置登录账号。密码不会明文保存，先生成密码哈希：
+
+```powershell
+.venv\Scripts\python.exe scripts\create_password_hash.py --username admin
+```
+
+把输出内容写入本机文件 `.streamlit/secrets.toml`：
+
+```toml
+[auth.users]
+admin = "脚本输出的 pbkdf2_sha256 哈希"
+```
+
+`.streamlit/secrets.toml` 已加入 `.gitignore`，不要提交到 GitHub。也可以用环境变量配置账号：
+
+```powershell
+$env:ZPW_AUTH_USERS_JSON='{"admin":"脚本输出的 pbkdf2_sha256 哈希"}'
+```
+
 命令行运行：
 
 ```bash
@@ -54,6 +73,32 @@ python crawl_027zpw_companies.py --config configs/027zpw_jobs.example.yml
 4. 点击 `Reboot app` 或重新部署。
 
 这个方案适合 MVP 和小批量任务。全量抓取并开启详情时，任务会比较久，建议先用 `max_pages=1` 或 `max_pages=3` 验证字段。
+
+## 本地运行并给外部访问
+
+如果 Streamlit Cloud 无法连接 `www.027zpw.com`，可以把应用跑在本机，再用公网隧道让别人访问。
+
+先启动本地 Streamlit：
+
+```powershell
+cd "C:\Users\fuweicheng\PycharmProjects\pythonProject\需求项目集\波兰VAT移仓算法\027zpw_company_crawler"
+.venv\Scripts\streamlit.exe run app.py --server.address 127.0.0.1 --server.port 8501
+```
+
+再开一个 PowerShell，用 Cloudflare Tunnel 暴露本地端口：
+
+```powershell
+cloudflared tunnel --url http://127.0.0.1:8501
+```
+
+命令会输出一个公网 `https://*.trycloudflare.com` 地址。把这个地址和登录账号发给使用者即可。
+
+注意：
+
+- 本机必须保持开机，两个命令窗口都不要关闭。
+- Quick Tunnel 地址可能变化，适合演示和临时使用。
+- 长期稳定使用建议配置 Cloudflare Named Tunnel 或部署到一台能访问目标站的服务器。
+- 登录账号必须配置强密码，不要复用个人常用密码。
 
 ## 部署到 Render
 

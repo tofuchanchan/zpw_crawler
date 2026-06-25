@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from src.zpw_crawler.auth import verify_password
 from src.zpw_crawler.config import job_from_url, jobs_from_yaml_text
 from src.zpw_crawler.fetcher import HttpFetcher
 from src.zpw_crawler.runner import run_jobs
@@ -19,6 +22,9 @@ DEFAULT_URL = (
 
 
 def main() -> None:
+    if not _require_login():
+        return
+
     st.title("027zpw 企业采集器")
     st.caption("公开搜索页与公开企业主页采集，导出结构化 Excel。")
 
@@ -120,6 +126,68 @@ def main() -> None:
 
     for result in results:
         _render_result(result)
+
+
+def _require_login() -> bool:
+    users = _load_auth_users()
+    current_user = st.session_state.get("auth_user")
+    if current_user and current_user in users:
+        with st.sidebar:
+            st.caption(f"已登录：{current_user}")
+            if st.button("退出登录"):
+                st.session_state.pop("auth_user", None)
+                st.rerun()
+        return True
+
+    st.title("027zpw 企业采集器")
+    st.subheader("登录")
+    st.caption("此页面会触发目标站采集请求，请先登录。")
+
+    if not users:
+        st.error("未配置登录账号。请先创建 `.streamlit/secrets.toml` 或设置 `ZPW_AUTH_USERS_JSON`。")
+        st.code(
+            ".venv\\Scripts\\python.exe scripts\\create_password_hash.py --username admin",
+            language="powershell",
+        )
+        return False
+
+    with st.form("login_form"):
+        username = st.text_input("账号")
+        password = st.text_input("密码", type="password")
+        submitted = st.form_submit_button("登录", type="primary")
+
+    if not submitted:
+        return False
+
+    encoded = users.get(username.strip())
+    if encoded and verify_password(password, encoded):
+        st.session_state["auth_user"] = username.strip()
+        st.rerun()
+
+    st.error("账号或密码错误")
+    return False
+
+
+def _load_auth_users() -> dict[str, str]:
+    users: dict[str, str] = {}
+
+    env_users = os.environ.get("ZPW_AUTH_USERS_JSON")
+    if env_users:
+        try:
+            payload = json.loads(env_users)
+            if isinstance(payload, dict):
+                users.update({str(key): str(value) for key, value in payload.items() if value})
+        except json.JSONDecodeError:
+            pass
+
+    try:
+        auth_config = st.secrets.get("auth", {})
+        secret_users = auth_config.get("users", {}) if auth_config else {}
+        users.update({str(key): str(value) for key, value in dict(secret_users).items() if value})
+    except Exception:
+        pass
+
+    return users
 
 
 def _render_empty_state() -> None:
