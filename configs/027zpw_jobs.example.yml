@@ -1,0 +1,18 @@
+jobs:
+  - name: trade_size_1
+    keyword: 贸易
+    filters:
+      vip: 0
+      type: 0
+      catid: 0
+      mode: 0
+      areaid: 0
+      size: 1
+      mincapital: ""
+      maxcapital: ""
+    crawl_detail: true
+    max_pages: 1
+    delay_seconds:
+      min: 1.5
+      max: 3.0
+    output_name: trade_size_1_companies.xlsx
